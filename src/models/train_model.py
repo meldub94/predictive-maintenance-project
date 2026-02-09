@@ -1,158 +1,164 @@
 """Entraînement de modèles de prédiction de défaillance."""
-
 import pandas as pd
 import numpy as np
 import logging
 from pathlib import Path
 from datetime import datetime
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import (
-    accuracy_score, precision_score, recall_score, f1_score,
-    roc_auc_score, classification_report
-)
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, classification_report
 from joblib import dump
 
-# Chemins
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = BASE_DIR.parent.parent
 FEATURES_DIR = PROJECT_ROOT / "data" / "processed" / "features"
 MODELS_DIR = PROJECT_ROOT / "models"
-LOG_DIR = BASE_DIR.parent / "data"
 
-# Logging
-def setup_logging(log_dir: Path):
-    log_dir.mkdir(parents=True, exist_ok=True)
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(log_dir / "train_log.log"),
-            logging.StreamHandler()
-        ]
-    )
-    return logging.getLogger('train')
+class ModelTrainer:
+    def __init__(self, models_dir=MODELS_DIR, random_state=42):
+        self.models_dir = Path(models_dir)
+        self.models_dir.mkdir(exist_ok=True)
+        self.random_state = random_state
+        
+        # Définir les modèles à tester
+        self.models = {
+            "random_forest": RandomForestClassifier(
+                n_estimators=100, max_depth=10, n_jobs=-1, random_state=random_state
+            ),
+            "gradient_boosting": GradientBoostingClassifier(
+                n_estimators=100, max_depth=5, random_state=random_state
+            ),
+            "logistic_regression": LogisticRegression(
+                max_iter=1000, solver='liblinear', random_state=random_state
+            )
+        }
+    
+    def load_data(self, train_path, test_path):
+        """Charge train et test."""
+        train = pd.read_parquet(train_path)
+        test = pd.read_parquet(test_path)
+        
+        X_train = train.drop('failure_soon', axis=1)
+        y_train = train['failure_soon']
+        X_test = test.drop('failure_soon', axis=1)
+        y_test = test['failure_soon']
+        
+        logger.info(f"✓ Train: {len(X_train):,} × {len(X_train.columns)}")
+        logger.info(f"✓ Test: {len(X_test):,} × {len(X_test.columns)}")
+        return X_train, X_test, y_train, y_test
+    
+    def train_models(self, X_train, y_train):
+        """Entraîne tous les modèles."""
+        trained = {}
+        
+        for name, model in self.models.items():
+            logger.info(f"\n🔄 Entraînement: {name}...")
+            model.fit(X_train, y_train)
+            trained[name] = model
+            logger.info(f"✓ {name} entraîné")
+        
+        return trained
+    
+    def evaluate_models(self, trained, X_test, y_test):
+        """Évalue tous les modèles."""
+        results = {}
+        
+        print("\n" + "="*70)
+        print("COMPARAISON DES MODÈLES")
+        print("="*70)
+        
+        for name, model in trained.items():
+            y_pred = model.predict(X_test)
+            y_prob = model.predict_proba(X_test)[:, 1] if hasattr(model, 'predict_proba') else None
+            
+            metrics = {
+                'accuracy': accuracy_score(y_test, y_pred),
+                'precision': precision_score(y_test, y_pred, zero_division=0),
+                'recall': recall_score(y_test, y_pred, zero_division=0),
+                'f1': f1_score(y_test, y_pred, zero_division=0)
+            }
+            
+            if y_prob is not None:
+                metrics['roc_auc'] = roc_auc_score(y_test, y_prob)
+            
+            results[name] = metrics
+            
+            # Afficher
+            print(f"\n📊 {name.upper()}")
+            print(f"   Accuracy  : {metrics['accuracy']:.4f}")
+            print(f"   Precision : {metrics['precision']:.4f}")
+            print(f"   Recall    : {metrics['recall']:.4f}")
+            print(f"   F1-Score  : {metrics['f1']:.4f}")
+            if 'roc_auc' in metrics:
+                print(f"   ROC-AUC   : {metrics['roc_auc']:.4f}")
+        
+        print("="*70)
+        
+        return results
+    
+    def find_best_model(self, results):
+        """Trouve le meilleur modèle selon ROC-AUC."""
+        best_name = max(results.keys(), key=lambda k: results[k].get('roc_auc', 0))
+        best_score = results[best_name].get('roc_auc', 0)
+        
+        print(f"\n🏆 MEILLEUR MODÈLE: {best_name.upper()} (ROC-AUC: {best_score:.4f})\n")
+        logger.info(f"Meilleur modèle: {best_name}")
+        
+        return best_name
+    
+    def save_model(self, name, model, metrics, features):
+        """Sauvegarde le meilleur modèle."""
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = self.models_dir / f"{name}_{ts}.pkl"
+        
+        dump({
+            'model': model,
+            'features': features,
+            'metrics': metrics,
+            'timestamp': ts
+        }, path, compress=0)
+        
+        logger.info(f"✓ Modèle sauvegardé: {path}")
+        return path
 
-logger = setup_logging(LOG_DIR)
-
-
-def load_data(train_path: Path, test_path: Path):
-    """Charge train et test."""
-    train = pd.read_parquet(train_path) if train_path.suffix == '.parquet' else pd.read_csv(train_path)
-    test = pd.read_parquet(test_path) if test_path.suffix == '.parquet' else pd.read_csv(test_path)
-    
-    if 'failure_soon' not in train.columns:
-        raise ValueError("Colonne 'failure_soon' manquante !")
-    
-    X_train = train.drop(columns=['failure_soon'])
-    y_train = train['failure_soon']
-    X_test = test.drop(columns=['failure_soon'])
-    y_test = test['failure_soon']
-    
-    logger.info(f"✓ Train: {len(X_train):,} × {len(X_train.columns)}")
-    logger.info(f"✓ Test: {len(X_test):,} × {len(X_test.columns)}")
-    logger.info(f"✓ Positifs: {y_train.sum()} train, {y_test.sum()} test")
-    
-    return X_train, X_test, y_train, y_test
-
-
-def train_model(X_train, y_train):
-    """Entraîne un Random Forest."""
-    logger.info("Entraînement du modèle Random Forest...")
-    
-    model = RandomForestClassifier(
-        n_estimators=100,
-        max_depth=10,
-        min_samples_split=10,
-        n_jobs=-1,
-        random_state=42,
-        verbose=1
-    )
-    
-    model.fit(X_train, y_train)
-    logger.info("✓ Modèle entraîné")
-    
-    return model
-
-
-def evaluate_model(model, X_test, y_test):
-    """Évalue le modèle."""
-    y_pred = model.predict(X_test)
-    y_prob = model.predict_proba(X_test)[:, 1]
-    
-    metrics = {
-        'accuracy': accuracy_score(y_test, y_pred),
-        'precision': precision_score(y_test, y_pred, zero_division=0),
-        'recall': recall_score(y_test, y_pred, zero_division=0),
-        'f1': f1_score(y_test, y_pred, zero_division=0),
-        'roc_auc': roc_auc_score(y_test, y_prob)
-    }
-    
-    print("\n" + "="*60)
-    print("RÉSULTATS")
-    print("="*60)
-    for name, value in metrics.items():
-        print(f"{name:12s}: {value:.4f}")
-    print("="*60 + "\n")
-    
-    print(classification_report(y_test, y_pred, target_names=['No Failure', 'Failure']))
-    
-    return metrics
-
-
-def save_model(model, metrics, feature_names, output_dir: Path):
-    """Sauvegarde le modèle."""
-    output_dir.mkdir(parents=True, exist_ok=True)
-    
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    model_path = output_dir / f"random_forest_{timestamp}.pkl"
-    
-    model_data = {
-        'model': model,
-        'metrics': metrics,
-        'features': feature_names,
-        'timestamp': timestamp
-    }
-    
-    dump(model_data, model_path)
-    logger.info(f"✓ Modèle sauvegardé : {model_path}")
-    
-    return model_path
-
-
-def train_pipeline(
-    train_path: Path = FEATURES_DIR / "train.parquet",
-    test_path: Path = FEATURES_DIR / "test.parquet",
-    output_dir: Path = MODELS_DIR
-):
-    """Pipeline complet d'entraînement."""
+def train_pipeline():
+    """Pipeline complet."""
     try:
-        logger.info("=== ENTRAÎNEMENT DU MODÈLE ===")
+        logger.info("=== ENTRAÎNEMENT DES MODÈLES ===\n")
         
-        # Charger
-        X_train, X_test, y_train, y_test = load_data(train_path, test_path)
+        trainer = ModelTrainer()
         
-        # Entraîner
-        model = train_model(X_train, y_train)
+        # 1. Charger données
+        X_train, X_test, y_train, y_test = trainer.load_data(
+            FEATURES_DIR / "train.parquet",
+            FEATURES_DIR / "test.parquet"
+        )
         
-        # Évaluer
-        metrics = evaluate_model(model, X_test, y_test)
+        # 2. Entraîner tous les modèles
+        trained = trainer.train_models(X_train, y_train)
         
-        # Sauvegarder
-        model_path = save_model(model, metrics, X_train.columns.tolist(), output_dir)
+        # 3. Évaluer tous les modèles
+        results = trainer.evaluate_models(trained, X_test, y_test)
         
-        logger.info(f"✅ Entraînement terminé ! ROC-AUC: {metrics['roc_auc']:.4f}")
+        # 4. Trouver le meilleur
+        best_name = trainer.find_best_model(results)
         
-        return model, metrics
-    
+        # 5. Sauvegarder le meilleur
+        trainer.save_model(
+            best_name,
+            trained[best_name],
+            results[best_name],
+            X_train.columns.tolist()
+        )
+        
+        logger.info("✅ Entraînement terminé !")
+        
     except Exception as e:
-        logger.error(f"❌ Erreur : {str(e)}", exc_info=True)
+        logger.error(f"❌ Erreur: {e}", exc_info=True)
         raise
 
-
 if __name__ == "__main__":
-    try:
-        model, metrics = train_pipeline()
-        print(f"\n✅ Modèle prêt ! ROC-AUC = {metrics['roc_auc']:.4f}")
-    except Exception as e:
-        logger.error(f"❌ Échec : {e}")
-        exit(1)
+    train_pipeline()
