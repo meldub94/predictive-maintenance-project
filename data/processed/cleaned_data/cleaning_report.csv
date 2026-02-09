@@ -1,0 +1,2 @@
+date_nettoyage,capteurs_initial,capteurs_final,capteurs_supprimes,taux_retention_capteurs_%,defaillances_initial,defaillances_final,defaillances_supprimees,outliers_temperature,outliers_vibration,outliers_pressure,outliers_current
+2026-02-09 21:48:20,259205,259205,0,100.0,23,23,0,33,388,0,49
