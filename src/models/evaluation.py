@@ -2,288 +2,238 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
-from sklearn.metrics import confusion_matrix, roc_curve, precision_recall_curve, auc
-from sklearn.metrics import classification_report, average_precision_score
-import joblib
-import os
+import logging
+from pathlib import Path
+from datetime import datetime
+from sklearn.metrics import (
+    accuracy_score, precision_score, recall_score, f1_score,
+    confusion_matrix, roc_curve, precision_recall_curve, auc,
+    classification_report, average_precision_score, roc_auc_score
+)
+from joblib import load
+
+# Chemins
+BASE_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = BASE_DIR.parent.parent
+FEATURES_DIR = PROJECT_ROOT / "data" / "processed" / "features"
+MODELS_DIR = PROJECT_ROOT / "models"
+REPORTS_DIR = PROJECT_ROOT / "reports" / "evaluation"
+LOG_DIR = BASE_DIR.parent / "data"
+
+# Logging
+def setup_logging(log_dir: Path) -> logging.Logger:
+    log_dir.mkdir(parents=True, exist_ok=True)
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(log_dir / "evaluation_log.log"),
+            logging.StreamHandler()
+        ]
+    )
+    return logging.getLogger('evaluation')
+
+logger = setup_logging(LOG_DIR)
 
 
-def load_test_data(test_data_path):
-    """
-    Charge les données de test prétraitées pour l'évaluation du modèle.
+def load_test_data(test_path: Path):
+    """Charge les données de test."""
+    if not test_path.exists():
+        raise FileNotFoundError(f"Fichier test introuvable: {test_path}")
     
-    Args:
-        test_data_path: Chemin vers les données de test
-        
-    Returns:
-        X_test: Features de test
-        y_test: Labels de test
-    """
-    try:
-        test_data = pd.read_csv(test_data_path)
-        # Supposons que la dernière colonne est la cible
-        X_test = test_data.iloc[:, :-1]
-        y_test = test_data.iloc[:, -1]
-        return X_test, y_test
-    except Exception as e:
-        print(f"Erreur lors du chargement des données de test: {e}")
-        return None, None
-
-
-def load_model(model_path):
-    """
-    Charge un modèle entraîné.
+    df = pd.read_parquet(test_path) if test_path.suffix == '.parquet' else pd.read_csv(test_path)
     
-    Args:
-        model_path: Chemin vers le modèle sauvegardé
-        
-    Returns:
-        model: Modèle chargé
-    """
-    try:
-        model = joblib.load(model_path)
-        return model
-    except Exception as e:
-        print(f"Erreur lors du chargement du modèle: {e}")
-        return None
-
-
-def calculate_classification_metrics(y_true, y_pred, y_prob=None):
-    """
-    Calcule les métriques de classification standards.
+    if 'failure_soon' not in df.columns:
+        raise ValueError("Colonne 'failure_soon' manquante dans les données de test")
     
-    Args:
-        y_true: Labels réels
-        y_pred: Labels prédits
-        y_prob: Probabilités de prédiction (optionnel)
-        
-    Returns:
-        metrics: Dictionnaire contenant les métriques calculées
-    """
+    y = df['failure_soon']
+    X = df.drop(columns=['failure_soon'])
+    
+    logger.info(f"✓ Test chargé : {len(X):,} lignes × {len(X.columns)} features")
+    return X, y
+
+
+def load_model(model_path: Path):
+    """Charge un modèle entraîné."""
+    if not model_path.exists():
+        raise FileNotFoundError(f"Modèle introuvable: {model_path}")
+    
+    obj = load(model_path)
+    model = obj.get("model", obj) if isinstance(obj, dict) else obj
+    
+    logger.info(f"✓ Modèle chargé : {model_path.name}")
+    return model
+
+
+def calculate_metrics(y_true, y_pred, y_prob=None):
+    """Calcule toutes les métriques."""
     metrics = {
         'accuracy': accuracy_score(y_true, y_pred),
-        'precision': precision_score(y_true, y_pred, average='weighted'),
-        'recall': recall_score(y_true, y_pred, average='weighted'),
-        'f1': f1_score(y_true, y_pred, average='weighted'),
+        'precision': precision_score(y_true, y_pred, zero_division=0),
+        'recall': recall_score(y_true, y_pred, zero_division=0),
+        'f1': f1_score(y_true, y_pred, zero_division=0),
     }
     
-    if y_prob is not None and len(np.unique(y_true)) == 2:
-        # Cas binaire avec probabilités
-        metrics['auc'] = auc(
-            *roc_curve(y_true, y_prob[:, 1] if y_prob.ndim > 1 else y_prob)[:2]
-        )
-        metrics['avg_precision'] = average_precision_score(
-            y_true, y_prob[:, 1] if y_prob.ndim > 1 else y_prob
-        )
+    if y_prob is not None:
+        prob_pos = y_prob[:, 1] if y_prob.ndim > 1 else y_prob
+        metrics['roc_auc'] = roc_auc_score(y_true, prob_pos)
+        metrics['avg_precision'] = average_precision_score(y_true, prob_pos)
     
     return metrics
 
 
-def plot_confusion_matrix(y_true, y_pred, class_names=None, save_path=None):
-    """
-    Trace et sauvegarde la matrice de confusion.
-    
-    Args:
-        y_true: Labels réels
-        y_pred: Labels prédits
-        class_names: Noms des classes (optionnel)
-        save_path: Chemin pour sauvegarder le graphique (optionnel)
-        
-    Returns:
-        None
-    """
+def plot_confusion_matrix(y_true, y_pred, output_path: Path):
+    """Matrice de confusion."""
     cm = confusion_matrix(y_true, y_pred)
-    plt.figure(figsize=(10, 8))
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
-                xticklabels=class_names, yticklabels=class_names)
-    plt.xlabel('Prédictions')
-    plt.ylabel('Valeurs réelles')
-    plt.title('Matrice de confusion')
     
-    if save_path:
-        plt.savefig(save_path)
-    plt.show()
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+                xticklabels=['No Failure', 'Failure'],
+                yticklabels=['No Failure', 'Failure'])
+    plt.xlabel('Predicted')
+    plt.ylabel('Actual')
+    plt.title('Confusion Matrix')
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=100, bbox_inches='tight')
+    plt.close()
+    logger.info(f"✓ Matrice de confusion : {output_path.name}")
 
 
-def plot_roc_curve(y_true, y_prob, save_path=None):
-    """
-    Trace et sauvegarde la courbe ROC (pour les problèmes binaires).
-    
-    Args:
-        y_true: Labels réels
-        y_prob: Probabilités de prédiction
-        save_path: Chemin pour sauvegarder le graphique (optionnel)
-        
-    Returns:
-        None
-    """
+def plot_roc_curve(y_true, y_prob, output_path: Path):
+    """Courbe ROC."""
     fpr, tpr, _ = roc_curve(y_true, y_prob)
     roc_auc = auc(fpr, tpr)
     
-    plt.figure(figsize=(10, 8))
-    plt.plot(fpr, tpr, color='darkorange', lw=2, 
-             label=f'ROC curve (area = {roc_auc:.2f})')
-    plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
+    plt.figure(figsize=(8, 6))
+    plt.plot(fpr, tpr, 'b-', lw=2, label=f'ROC (AUC = {roc_auc:.3f})')
+    plt.plot([0, 1], [0, 1], 'r--', lw=2, label='Random')
     plt.xlim([0.0, 1.0])
     plt.ylim([0.0, 1.05])
-    plt.xlabel('Taux de faux positifs')
-    plt.ylabel('Taux de vrais positifs')
-    plt.title('Courbe ROC')
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('ROC Curve')
     plt.legend(loc="lower right")
-    
-    if save_path:
-        plt.savefig(save_path)
-    plt.show()
+    plt.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=100, bbox_inches='tight')
+    plt.close()
+    logger.info(f"✓ Courbe ROC : {output_path.name}")
 
 
-def plot_precision_recall_curve(y_true, y_prob, save_path=None):
-    """
-    Trace et sauvegarde la courbe Precision-Recall (pour les problèmes binaires).
-    
-    Args:
-        y_true: Labels réels
-        y_prob: Probabilités de prédiction
-        save_path: Chemin pour sauvegarder le graphique (optionnel)
-        
-    Returns:
-        None
-    """
+def plot_pr_curve(y_true, y_prob, output_path: Path):
+    """Courbe Precision-Recall."""
     precision, recall, _ = precision_recall_curve(y_true, y_prob)
-    avg_precision = average_precision_score(y_true, y_prob)
+    avg_prec = average_precision_score(y_true, y_prob)
     
-    plt.figure(figsize=(10, 8))
-    plt.plot(recall, precision, color='blue', lw=2, 
-             label=f'Precision-Recall curve (AP = {avg_precision:.2f})')
+    plt.figure(figsize=(8, 6))
+    plt.plot(recall, precision, 'b-', lw=2, label=f'PR (AP = {avg_prec:.3f})')
     plt.xlabel('Recall')
     plt.ylabel('Precision')
-    plt.title('Courbe Precision-Recall')
+    plt.title('Precision-Recall Curve')
     plt.legend(loc="lower left")
-    
-    if save_path:
-        plt.savefig(save_path)
-    plt.show()
+    plt.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=100, bbox_inches='tight')
+    plt.close()
+    logger.info(f"✓ Courbe PR : {output_path.name}")
 
 
-def plot_feature_importance(model, feature_names, top_n=20, save_path=None):
-    """
-    Trace et sauvegarde l'importance des caractéristiques.
+def plot_feature_importance(model, feature_names, output_path: Path, top_n=20):
+    """Importance des features."""
+    if not hasattr(model, 'feature_importances_'):
+        logger.warning("Modèle sans feature_importances_")
+        return
     
-    Args:
-        model: Modèle entraîné avec un attribut feature_importances_
-        feature_names: Noms des caractéristiques
-        top_n: Nombre de caractéristiques à afficher
-        save_path: Chemin pour sauvegarder le graphique (optionnel)
-        
-    Returns:
-        None
-    """
+    importances = model.feature_importances_
+    indices = np.argsort(importances)[::-1][:top_n]
+    
+    plt.figure(figsize=(10, 8))
+    plt.barh(range(top_n), importances[indices])
+    plt.yticks(range(top_n), [feature_names[i] for i in indices])
+    plt.xlabel('Importance')
+    plt.title(f'Top {top_n} Most Important Features')
+    plt.gca().invert_yaxis()
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=100, bbox_inches='tight')
+    plt.close()
+    logger.info(f"✓ Feature importance : {output_path.name}")
+
+
+def evaluate_model(
+    model_path: Path = None,
+    test_path: Path = FEATURES_DIR / "test.parquet",
+    output_dir: Path = REPORTS_DIR
+):
+    """Évalue un modèle sur le test set."""
     try:
-        # Vérifier si le modèle a un attribut feature_importances_
-        importances = model.feature_importances_
+        output_dir.mkdir(parents=True, exist_ok=True)
         
-        # Créer un DataFrame pour faciliter le tri
-        feature_imp = pd.DataFrame({'feature': feature_names, 'importance': importances})
-        feature_imp = feature_imp.sort_values('importance', ascending=False).head(top_n)
+        logger.info("=== ÉVALUATION DU MODÈLE ===")
         
-        plt.figure(figsize=(12, 8))
-        sns.barplot(x='importance', y='feature', data=feature_imp)
-        plt.title(f'Top {top_n} caractéristiques les plus importantes')
-        plt.tight_layout()
+        # Charger
+        X_test, y_test = load_test_data(test_path)
         
-        if save_path:
-            plt.savefig(save_path)
-        plt.show()
+        # Trouver le modèle le plus récent si non spécifié
+        if model_path is None:
+            model_files = sorted(MODELS_DIR.glob("*.pkl"), key=lambda p: p.stat().st_mtime, reverse=True)
+            if not model_files:
+                raise FileNotFoundError("Aucun modèle trouvé dans models/")
+            model_path = model_files[0]
+            logger.info(f"Utilisation du modèle le plus récent: {model_path.name}")
         
-    except (AttributeError, TypeError) as e:
-        print(f"Ce modèle ne prend pas en charge l'affichage de l'importance des caractéristiques: {e}")
-
-
-def evaluate_model(model, X_test, y_test, class_names=None, output_dir=None):
-    """
-    Fonction principale pour effectuer l'évaluation complète du modèle.
-    
-    Args:
-        model: Modèle entraîné
-        X_test: Features de test
-        y_test: Labels de test
-        class_names: Noms des classes (optionnel)
-        output_dir: Répertoire de sortie pour les graphiques (optionnel)
+        model = load_model(model_path)
         
-    Returns:
-        results: Dictionnaire contenant les résultats de l'évaluation
-    """
-    if output_dir and not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-    
-    # Faire des prédictions
-    y_pred = model.predict(X_test)
-    
-    # Obtenir les probabilités si disponibles
-    if hasattr(model, "predict_proba"):
-        y_prob = model.predict_proba(X_test)
-    else:
-        y_prob = None
-    
-    # Calculer les métriques de classification
-    metrics = calculate_classification_metrics(y_test, y_pred, y_prob)
-    
-    # Afficher les résultats
-    print("\n==== Résultats de l'évaluation ====")
-    for metric, value in metrics.items():
-        print(f"{metric}: {value:.4f}")
-    
-    # Rapport de classification détaillé
-    print("\n==== Rapport de classification ====")
-    print(classification_report(y_test, y_pred))
-    
-    # Tracer et sauvegarder la matrice de confusion
-    cm_path = os.path.join(output_dir, "confusion_matrix.png") if output_dir else None
-    plot_confusion_matrix(y_test, y_pred, class_names, cm_path)
-    
-    # Pour les problèmes binaires, tracer ROC et PR curves
-    binary_classification = len(np.unique(y_test)) == 2
-    if binary_classification and y_prob is not None:
-        # Pour les problèmes binaires, obtenir les probabilités de la classe positive
-        prob_positive = y_prob[:, 1] if y_prob.ndim > 1 else y_prob
+        # Prédictions
+        y_pred = model.predict(X_test)
+        y_prob = model.predict_proba(X_test) if hasattr(model, 'predict_proba') else None
         
-        # Tracer la courbe ROC
-        roc_path = os.path.join(output_dir, "roc_curve.png") if output_dir else None
-        plot_roc_curve(y_test, prob_positive, roc_path)
+        # Métriques
+        metrics = calculate_metrics(y_test, y_pred, y_prob)
         
-        # Tracer la courbe Precision-Recall
-        pr_path = os.path.join(output_dir, "pr_curve.png") if output_dir else None
-        plot_precision_recall_curve(y_test, prob_positive, pr_path)
+        print("\n" + "="*60)
+        print("RÉSULTATS DE L'ÉVALUATION")
+        print("="*60)
+        for name, value in metrics.items():
+            print(f"{name:15s}: {value:.4f}")
+        print("="*60 + "\n")
+        
+        # Rapport détaillé
+        print(classification_report(y_test, y_pred, target_names=['No Failure', 'Failure']))
+        
+        # Visualisations
+        plot_confusion_matrix(y_test, y_pred, output_dir / "confusion_matrix.png")
+        
+        if y_prob is not None:
+            prob_pos = y_prob[:, 1] if y_prob.ndim > 1 else y_prob
+            plot_roc_curve(y_test, prob_pos, output_dir / "roc_curve.png")
+            plot_pr_curve(y_test, prob_pos, output_dir / "pr_curve.png")
+        
+        plot_feature_importance(model, X_test.columns, output_dir / "feature_importance.png")
+        
+        # Sauvegarder rapport
+        report = {
+            'date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            'model': model_path.name,
+            'test_size': len(y_test),
+            'positive_samples': int(y_test.sum()),
+            **metrics
+        }
+        
+        pd.DataFrame([report]).to_csv(output_dir / "evaluation_report.csv", index=False)
+        
+        logger.info(f"✅ Évaluation terminée : {output_dir}")
+        
+        return metrics
     
-    # Tracer l'importance des caractéristiques si disponible
-    if hasattr(model, "feature_importances_"):
-        fi_path = os.path.join(output_dir, "feature_importance.png") if output_dir else None
-        plot_feature_importance(model, X_test.columns, save_path=fi_path)
-    
-    return {
-        'metrics': metrics,
-        'y_true': y_test,
-        'y_pred': y_pred,
-        'y_prob': y_prob
-    }
+    except Exception as e:
+        logger.error(f"❌ Erreur : {str(e)}", exc_info=True)
+        raise
 
 
 if __name__ == "__main__":
-    # Exemple d'utilisation du script
-    model_path = "models/predictive_maintenance_model.pkl"
-    test_data_path = "data/processed/feature_test_data.csv"
-    output_dir = "reports/evaluation"
-    
-    # Charger les données et le modèle
-    X_test, y_test = load_test_data(test_data_path)
-    model = load_model(model_path)
-    
-    if X_test is not None and model is not None:
-        # Classes pour les défaillances (à adapter selon vos données)
-        class_names = ["Pas de défaillance", "Défaillance"]
-        
-        # Évaluer le modèle
-        results = evaluate_model(model, X_test, y_test, class_names, output_dir)
-        print("\nÉvaluation du modèle terminée avec succès!")
-    else:
-        print("Impossible de procéder à l'évaluation du modèle.")
+    try:
+        metrics = evaluate_model()
+        print(f"\n✅ Évaluation terminée ! ROC-AUC: {metrics.get('roc_auc', 'N/A'):.4f}")
+    except Exception as e:
+        logger.error(f"❌ Échec : {e}")
+        exit(1)
