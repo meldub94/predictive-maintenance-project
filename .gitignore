@@ -1,0 +1,60 @@
+# Environnement virtuel
+venv/
+env/
+ENV/
+.venv
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Jupyter Notebooks
+.ipynb_checkpoints
+*.ipynb_checkpoints/
+
+# Données (trop volumineuses)
+data/raw/*.csv
+data/raw/*.parquet
+data/processed/**/*.parquet
+data/processed/**/*.csv
+*.pkl
+*.h5
+
+# Garder les dossiers vides
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# Garder les petits rapports
+!**/*report*.csv
+!**/*_feature_importance*.csv
+
+# Logs
+*.log
+logs/
+src/data/*.log
+src/models/*.log
+src/features/*.log
+src/monitoring/*.log
+
+# Secrets
+.env
+.env.local
+secrets.json
+
+# IDE / Éditeurs
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Weights & Biases
+wandb/
+
+# Modèles (fichiers lourds)
+models/**/*.pkl
+models/**/*.h5
+!models/**/training_summary*.csv
