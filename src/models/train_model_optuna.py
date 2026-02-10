@@ -151,6 +151,9 @@ class OptunaModelTrainer:
         elif model_name == 'gradient_boosting':
             model = GradientBoostingClassifier(**best_params)
         elif model_name == 'logistic_regression':
+            # Ajouter le solver compatible avec la pénalité
+            if best_params.get('penalty') == 'l1':
+                best_params['solver'] = 'liblinear'
             model = LogisticRegression(**best_params)
         
         model.fit(self.X_train, self.y_train)

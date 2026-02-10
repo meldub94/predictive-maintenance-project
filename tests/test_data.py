@@ -1,88 +1,73 @@
+"""Tests pour le pipeline de données."""
 import unittest
 import pandas as pd
 import numpy as np
-import os
-from io import StringIO
-from unittest.mock import patch, mock_open
+from pathlib import Path
+import sys
 
-# Supposons que vous avez un module data.py qui contient des fonctions 
-# pour charger et prétraiter les données
-from data import load_data, preprocess_data, split_data, check_missing_values
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from src.data.clean import clean_data, detect_outliers
+from src.data.augment import augment_data, create_time_features, create_rolling_features, create_lag_features
 
 
 class TestDataFunctions(unittest.TestCase):
     
     def setUp(self):
-        # Création d'un DataFrame de test
-        self.test_df = pd.DataFrame({
-            'temperature': [35.1, 37.2, 39.5, 40.1, 36.8],
-            'pression': [102.3, 103.5, 101.2, 104.7, 103.1],
-            'vibration': [0.32, 0.28, 0.45, 0.51, 0.38],
-            'defaillance': [0, 0, 1, 1, 0]
+        """Création de données de test."""
+        self.test_sensor_df = pd.DataFrame({
+            'timestamp': pd.date_range(start='2023-01-01', periods=100, freq='h'),
+            'equipment_id': ['EQ001'] * 100,
+            'temperature': np.random.normal(70, 5, 100),
+            'vibration': np.random.normal(1.5, 0.3, 100),
+            'pressure': np.random.normal(20, 2, 100),
+            'current': np.random.normal(100, 10, 100),
+            'equipment_type': ['compressor'] * 100
         })
-        
-        # Mock de données CSV
-        self.csv_content = """temperature,pression,vibration,defaillance
-35.1,102.3,0.32,0
-37.2,103.5,0.28,0
-39.5,101.2,0.45,1
-40.1,104.7,0.51,1
-36.8,103.1,0.38,0"""
     
-    @patch('builtins.open', new_callable=mock_open, read_data="temperature,pression,vibration,defaillance\n35.1,102.3,0.32,0\n37.2,103.5,0.28,0")
-    @patch('os.path.exists', return_value=True)
-    def test_load_data(self, mock_exists, mock_file):
-        # Test du chargement de données
-        data = load_data('fake_path.csv')
-        self.assertIsInstance(data, pd.DataFrame)
-        self.assertEqual(len(data), 2)  # 2 lignes dans notre mock
-        self.assertEqual(list(data.columns), ['temperature', 'pression', 'vibration', 'defaillance'])
+    def test_detect_outliers(self):
+        """Test de la détection d'outliers."""
+        data_with_outliers = self.test_sensor_df.copy()
+        data_with_outliers.loc[5, 'temperature'] = 150
         
-        # Test avec un fichier qui n'existe pas
-        mock_exists.return_value = False
-        with self.assertRaises(FileNotFoundError):
-            load_data('nonexistent_file.csv')
+        # Signature réelle: column (singulier)
+        outliers = detect_outliers(data_with_outliers, column='temperature')
+        
+        self.assertIsInstance(outliers, pd.Series)
+        self.assertGreater(len(outliers), 0)
     
-    def test_preprocess_data(self):
-        # Test du prétraitement de données
-        processed_df = preprocess_data(self.test_df)
+    def test_create_time_features(self):
+        """Test de la création de features temporelles."""
+        result_df = create_time_features(self.test_sensor_df)
         
-        # Vérifier que toutes les colonnes sont présentes
-        self.assertEqual(set(processed_df.columns), set(['temperature', 'pression', 'vibration', 'defaillance']))
+        time_cols = ['hour', 'day_of_week', 'month', 'quarter']
+        created_cols = [col for col in time_cols if col in result_df.columns]
         
-        # Vérifier qu'il n'y a pas de valeurs manquantes
-        self.assertEqual(processed_df.isnull().sum().sum(), 0)
-        
-        # Vérifier que les valeurs sont normalisées (si applicable)
-        # Par exemple, si votre fonction normalise les données entre 0 et 1
-        for col in ['temperature', 'pression', 'vibration']:
-            if col in processed_df.columns:
-                self.assertTrue(processed_df[col].min() >= 0)
-                self.assertTrue(processed_df[col].max() <= 1)
+        self.assertGreater(len(created_cols), 0)
+        self.assertIn('temperature', result_df.columns)
     
-    def test_split_data(self):
-        # Test de la division des données
-        X_train, X_test, y_train, y_test = split_data(self.test_df, test_size=0.2, random_state=42)
+    def test_create_rolling_features(self):
+        """Test des statistiques sur fenêtre glissante."""
+        # Signature réelle: window_sizes
+        result_df = create_rolling_features(
+            self.test_sensor_df,
+            window_sizes=[5, 10]
+        )
         
-        # Vérifier les dimensions
-        self.assertEqual(len(X_train) + len(X_test), len(self.test_df))
-        self.assertEqual(len(y_train), len(X_train))
-        self.assertEqual(len(y_test), len(X_test))
-        
-        # Vérifier que la colonne 'defaillance' n'est pas dans X_train/X_test
-        self.assertNotIn('defaillance', X_train.columns)
-        self.assertNotIn('defaillance', X_test.columns)
+        rolling_cols = [col for col in result_df.columns if 'rolling' in col.lower()]
+        self.assertGreater(len(rolling_cols), 0)
     
-    def test_check_missing_values(self):
-        # Test de la fonction qui vérifie les valeurs manquantes
-        df_with_missing = self.test_df.copy()
-        df_with_missing.loc[0, 'temperature'] = np.nan
+    def test_create_lag_features(self):
+        """Test de la création de features avec décalage temporel."""
+        # Signature réelle: lag_periods
+        result_df = create_lag_features(
+            self.test_sensor_df,
+            lag_periods=[1, 3, 5]
+        )
         
-        # Vérifier qu'elle détecte correctement les valeurs manquantes
-        self.assertTrue(check_missing_values(df_with_missing))
-        
-        # Vérifier qu'elle renvoie False quand il n'y a pas de valeurs manquantes
-        self.assertFalse(check_missing_values(self.test_df))
+        lag_cols = [col for col in result_df.columns if 'lag' in col.lower()]
+        self.assertGreater(len(lag_cols), 0)
+        self.assertEqual(len(result_df), len(self.test_sensor_df))
 
 
 if __name__ == '__main__':
