@@ -206,8 +206,8 @@ def add_failure_indicators(
     
     # Initialisation
     sensor_df['failure_soon'] = 0
-    sensor_df['time_to_failure'] = pd.NA
-    sensor_df['next_failure_type'] = pd.NA
+    # sensor_df['time_to_failure'] = pd.NA
+    # sensor_df['next_failure_type'] = pd.NA
     
     logger.info(f"Ajout des indicateurs de défaillance (fenêtre: {time_window}h)...")
     
@@ -232,11 +232,12 @@ def add_failure_indicators(
         if window_mask.sum() > 0:
             sensor_df.loc[window_mask, 'failure_soon'] = 1
             
-            # Temps jusqu'à la défaillance (en heures)
-            time_diff = (failure_time - sensor_df.loc[window_mask, 'timestamp']).dt.total_seconds() / 3600
-            sensor_df.loc[window_mask, 'time_to_failure'] = time_diff
-            
-            sensor_df.loc[window_mask, 'next_failure_type'] = failure_type
+            # ❌ DATA LEAKAGE CORRIGÉ : Ces features "voient le futur"
+            # # Temps jusqu'à la défaillance (en heures)
+            # time_diff = (failure_time - sensor_df.loc[window_mask, 'timestamp']).dt.total_seconds() / 3600
+            # sensor_df.loc[window_mask, 'time_to_failure'] = time_diff
+            # 
+            # sensor_df.loc[window_mask, 'next_failure_type'] = failure_type
             
             failure_count += 1
     
@@ -382,7 +383,7 @@ def feature_scaling(
     df = df.copy()
     
     # Colonnes à exclure de la mise à l'échelle
-    default_exclude = ['timestamp', 'equipment_id', 'equipment_type', 'failure_soon', 'next_failure_type']
+    default_exclude = ['timestamp', 'equipment_id', 'equipment_type', 'failure_soon']
     if exclude_cols:
         default_exclude.extend(exclude_cols)
     
