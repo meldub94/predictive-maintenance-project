@@ -341,6 +341,7 @@ if __name__ == "__main__":
         "min_samples_split": 5,
         "random_state": 42,
         "test_size": 0.2,
+        "smote": True,
         "features": {
             "temporal": True,
             "rolling_windows": [5, 10, 30],
@@ -348,21 +349,21 @@ if __name__ == "__main__":
             "interactions": True
         }
     }
-    
+
     # =======================================================================
     # INITIALISATION DU TRACKER
     # =======================================================================
-    
+
     tracker = WandbExperimentTracker(
         project_name="industrial-failure-prediction",
         config=config,
-        tags=["random_forest", "baseline", "v1"],
-        group="initial_experiments",
+        tags=["random_forest", "smote", "v2"],
+        group="smote_experiments",
         job_type="training"
     )
-    
+
     # Démarrer la run
-    tracker.start_run(run_name=f"RF_baseline_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+    tracker.start_run(run_name=f"RF_SMOTE_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
     
     try:
         # ===================================================================
@@ -402,19 +403,41 @@ if __name__ == "__main__":
         })
         
         print(f"✅ Train: {X_train.shape}, Test: {X_test.shape}")
-        
+
+        # ===================================================================
+        # SMOTE
+        # ===================================================================
+
+        print("\n⚖️ Application SMOTE...")
+        from imblearn.over_sampling import SMOTE
+
+        tracker.log_metrics({
+            "before_smote_positive": int(y_train.sum()),
+            "before_smote_negative": int((y_train == 0).sum()),
+        })
+
+        smote = SMOTE(random_state=config["random_state"])
+        X_train, y_train = smote.fit_resample(X_train, y_train)
+
+        tracker.log_metrics({
+            "after_smote_samples": len(X_train),
+            "after_smote_positive": int(y_train.sum()),
+        })
+
+        print(f"✅ SMOTE appliqué : {len(X_train):,} lignes (50/50)")
+
         # ===================================================================
         # ENTRAÎNEMENT MODÈLE
         # ===================================================================
-        
+
         print("\n🔧 Entraînement du modèle...")
-        
+
         from sklearn.ensemble import RandomForestClassifier
         from sklearn.metrics import (
-            accuracy_score, precision_score, recall_score, 
+            accuracy_score, precision_score, recall_score,
             f1_score, roc_auc_score
         )
-        
+
         # Créer et entraîner modèle
         model = RandomForestClassifier(
             n_estimators=config["n_estimators"],
@@ -424,7 +447,7 @@ if __name__ == "__main__":
             n_jobs=-1,
             verbose=1
         )
-        
+
         model.fit(X_train, y_train)
         print("✅ Modèle entraîné")
         

@@ -1,0 +1,56 @@
+[
+    {
+        "timestamp": "2026-02-22 00:38:07",
+        "model_name": "random_forest",
+        "model_version": "v1_smote",
+        "dataset": "test_set",
+        "sample_size": 51841,
+        "metrics": {
+            "accuracy": 0.9925734457282845,
+            "precision": 0.7766705744431418,
+            "recall": 0.9969902182091799,
+            "f1": 0.8731466227347611,
+            "roc_auc": 0.9997729644229396
+        },
+        "degradation": {
+            "has_degradation": false,
+            "metrics_diff": {
+                "accuracy": {
+                    "baseline": 0.9925734457282845,
+                    "current": 0.9925734457282845,
+                    "difference": 0.0,
+                    "relative_difference": 0.0,
+                    "degraded": false
+                },
+                "precision": {
+                    "baseline": 0.7766705744431418,
+                    "current": 0.7766705744431418,
+                    "difference": 0.0,
+                    "relative_difference": 0.0,
+                    "degraded": false
+                },
+                "recall": {
+                    "baseline": 0.9969902182091799,
+                    "current": 0.9969902182091799,
+                    "difference": 0.0,
+                    "relative_difference": 0.0,
+                    "degraded": false
+                },
+                "f1": {
+                    "baseline": 0.8731466227347611,
+                    "current": 0.8731466227347611,
+                    "difference": 0.0,
+                    "relative_difference": 0.0,
+                    "degraded": false
+                },
+                "roc_auc": {
+                    "baseline": 0.9997729644229396,
+                    "current": 0.9997729644229396,
+                    "difference": 0.0,
+                    "relative_difference": 0.0,
+                    "degraded": false
+                }
+            }
+        }
+    }
+]

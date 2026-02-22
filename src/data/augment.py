@@ -180,7 +180,7 @@ def create_lag_features(
             df[f'{col}_pct_change_{lag}'] = df.groupby(group_by)[col].pct_change(periods=lag)
             
             # Remplacer les inf par NaN
-            df[f'{col}_pct_change_{lag}'].replace([np.inf, -np.inf], np.nan, inplace=True)
+            df[f'{col}_pct_change_{lag}'] = df[f'{col}_pct_change_{lag}'].replace([np.inf, -np.inf], np.nan)
             
             features_created += 3
     

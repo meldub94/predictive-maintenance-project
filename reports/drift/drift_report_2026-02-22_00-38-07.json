@@ -1,0 +1,108 @@
+{
+    "timestamp": "2026-02-22 00:38:07",
+    "sample_size": 51841,
+    "features": {
+        "temperature": {
+            "ks_statistic": 0.011092536795200725,
+            "p_value": 0.6246314654659109,
+            "drift_detected": false
+        },
+        "vibration": {
+            "ks_statistic": 0.011258062151578874,
+            "p_value": 0.6058599717781894,
+            "drift_detected": false
+        },
+        "pressure": {
+            "ks_statistic": 0.010122721398121148,
+            "p_value": 0.734374401281179,
+            "drift_detected": false
+        },
+        "current": {
+            "ks_statistic": 0.011539376169441173,
+            "p_value": 0.574212911586252,
+            "drift_detected": false
+        },
+        "temperature_outlier": {
+            "ks_statistic": 0.00011573850813062503,
+            "p_value": 1.0,
+            "drift_detected": false
+        },
+        "vibration_outlier": {
+            "ks_statistic": 0.00016037113481615073,
+            "p_value": 1.0,
+            "drift_detected": false
+        },
+        "current_outlier": {
+            "ks_statistic": 0.00015431801084087038,
+            "p_value": 1.0,
+            "drift_detected": false
+        },
+        "hour": {
+            "ks_statistic": 0.007792793348893712,
+            "p_value": 0.9426015581015759,
+            "drift_detected": false
+        },
+        "day_of_week": {
+            "ks_statistic": 0.009766401111089673,
+            "p_value": 0.7732736597569276,
+            "drift_detected": false
+        },
+        "day_of_month": {
+            "ks_statistic": 0.007019351478559449,
+            "p_value": 0.9770536380010405,
+            "drift_detected": false
+        },
+        "month": {
+            "ks_statistic": 0.004203375706487128,
+            "p_value": 0.9999974651791488,
+            "drift_detected": false
+        },
+        "quarter": {
+            "ks_statistic": 0.0008776836866573046,
+            "p_value": 1.0,
+            "drift_detected": false
+        },
+        "year": {
+            "ks_statistic": 0.0,
+            "p_value": 1.0,
+            "drift_detected": false
+        },
+        "is_night": {
+            "ks_statistic": 0.004018294400185196,
+            "p_value": 0.9999993504808706,
+            "drift_detected": false
+        },
+        "is_weekend": {
+            "ks_statistic": 4.065507995598683e-05,
+            "p_value": 1.0,
+            "drift_detected": false
+        },
+        "hour_sin": {
+            "ks_statistic": 0.00978417083003802,
+            "p_value": 0.7713681742391355,
+            "drift_detected": false
+        },
+        "hour_cos": {
+            "ks_statistic": 0.007402044713643641,
+            "p_value": 0.9624662667895008,
+            "drift_detected": false
+        },
+        "month_sin": {
+            "ks_statistic": 0.0020659130803803993,
+            "p_value": 1.0,
+            "drift_detected": false
+        },
+        "month_cos": {
+            "ks_statistic": 0.004203375706487211,
+            "p_value": 0.9999974651791488,
+            "drift_detected": false
+        },
+        "temperature_rolling_mean_5": {
+            "ks_statistic": 0.01009494415616985,
+            "p_value": 0.7374528320090874,
+            "drift_detected": false
+        }
+    },
+    "overall_drift_detected": false,
+    "drift_percentage": 0.0
+}

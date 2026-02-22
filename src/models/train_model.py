@@ -7,6 +7,7 @@ from datetime import datetime
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, classification_report
+from imblearn.over_sampling import SMOTE
 from joblib import dump
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -24,16 +25,11 @@ class ModelTrainer:
         self.random_state = random_state
         
         # Définir les modèles à tester
+        # Note: GB et LR sont trop lents sur le dataset SMOTE (404K lignes), RF suffit
         self.models = {
             "random_forest": RandomForestClassifier(
                 n_estimators=100, max_depth=10, n_jobs=-1, random_state=random_state
             ),
-            "gradient_boosting": GradientBoostingClassifier(
-                n_estimators=100, max_depth=5, random_state=random_state
-            ),
-            "logistic_regression": LogisticRegression(
-                max_iter=1000, solver='liblinear', random_state=random_state
-            )
         }
     
     def load_data(self, train_path, test_path):
@@ -50,6 +46,15 @@ class ModelTrainer:
         logger.info(f"✓ Test: {len(X_test):,} × {len(X_test.columns)}")
         return X_train, X_test, y_train, y_test
     
+    def apply_smote(self, X_train, y_train):
+        """Applique SMOTE pour rééquilibrer les classes."""
+        logger.info(f"Distribution avant SMOTE : {dict(y_train.value_counts())}")
+        smote = SMOTE(random_state=self.random_state)
+        X_resampled, y_resampled = smote.fit_resample(X_train, y_train)
+        logger.info(f"Distribution après SMOTE : {dict(pd.Series(y_resampled).value_counts())}")
+        logger.info(f"✓ SMOTE appliqué : {len(X_train):,} → {len(X_resampled):,} lignes")
+        return X_resampled, y_resampled
+
     def train_models(self, X_train, y_train):
         """Entraîne tous les modèles."""
         trained = {}
@@ -137,16 +142,19 @@ def train_pipeline():
             FEATURES_DIR / "test.parquet"
         )
         
-        # 2. Entraîner tous les modèles
+        # 2. Appliquer SMOTE pour rééquilibrer
+        X_train, y_train = trainer.apply_smote(X_train, y_train)
+
+        # 3. Entraîner tous les modèles
         trained = trainer.train_models(X_train, y_train)
         
-        # 3. Évaluer tous les modèles
+        # 4. Évaluer tous les modèles
         results = trainer.evaluate_models(trained, X_test, y_test)
-        
-        # 4. Trouver le meilleur
+
+        # 5. Trouver le meilleur
         best_name = trainer.find_best_model(results)
-        
-        # 5. Sauvegarder le meilleur
+
+        # 6. Sauvegarder le meilleur
         trainer.save_model(
             best_name,
             trained[best_name],
